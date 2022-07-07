@@ -1,4 +1,4 @@
-# rewards 
+# rewards
 
 Allow any dApp to integrate a loyalty program for users that integrate with their dApp
 

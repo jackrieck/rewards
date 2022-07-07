@@ -1,0 +1,26 @@
+[features]
+seeds = false
+skip-lint = false
+[programs.localnet]
+rewards = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "/Users/jack/.config/solana/id.json"
+
+[test.validator]
+url = "https://solana-api.projectserum.com"
+
+# metaplex-token-metadata program
+[[test.validator.clone]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+
+# metaplex-token-metadata program data
+[[test.validator.clone]]
+address = "PwDiXFxQsGra4sFFTT8r1QWRMd4vfumiWC1jfWNfdYT"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

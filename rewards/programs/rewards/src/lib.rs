@@ -1,8 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{
-    program::invoke_signed,
-    sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
-};
+use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::{self, associated_token, token};
 use mpl_token_metadata::instruction::create_metadata_accounts_v2;
 use mpl_token_metadata::state::{DataV2, UseMethod, Uses};
@@ -74,9 +71,11 @@ pub mod rewards {
             ]],
         )?;
 
+        // set config in account
         let config = &mut ctx.accounts.config;
         config.name = params.name;
         config.threshold = params.threshold;
+        config.allowed_program = params.allowed_program;
 
         Ok(())
     }
@@ -85,13 +84,11 @@ pub mod rewards {
         Ok(())
     }
 
-    pub fn approve(ctx: Context<Approve>, params: ApproveParams) -> Result<bool> {
-        // check that approved is not called via CPI
-        let current_index = load_current_index_checked(&ctx.accounts.instructions)? as usize;
-        let current_ix = load_instruction_at_checked(current_index, &ctx.accounts.instructions)?;
-        if current_ix.program_id != *ctx.program_id {
-            return err!(ErrorCodes::CpiApproveNotAllowed);
-        }
+    pub fn reward(ctx: Context<Reward>, params: RewardParams) -> Result<bool> {
+        //// if the caller is not the configured allowed program return an error
+        //if ctx.program_id.ne(&ctx.accounts.config.allowed_program) {
+        //    return err!(ErrorCodes::InsufficientPrivileges);
+        //}
 
         // check if approved before minting the next reward token
         let is_approved = ctx.accounts.config.threshold <= ctx.accounts.user_ata.amount;
@@ -127,7 +124,7 @@ pub mod rewards {
                     &[*ctx.bumps.get("config").unwrap()],
                 ]],
             ),
-            1,
+            params.amount,
         )?;
 
         Ok(is_approved)
@@ -162,43 +159,36 @@ pub struct CreateRewardPlan<'info> {
 pub struct RewardPlanConfig {
     pub name: String,
     pub threshold: u64,
-    pub reward_program_id: Pubkey,
-    pub reward_program_ix_accounts_len: u64,
+    pub allowed_program: Pubkey,
 }
 
 impl RewardPlanConfig {
-    pub const MAX_SIZE: usize = 8 + 50 + 8 + 32 + 8;
+    pub const MAX_SIZE: usize = 8 + 50 + 8 + 32;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateRewardPlanParams {
     pub name: String,
     pub threshold: u64,
-    pub reward_program_id: Pubkey,
-    pub reward_program_ix_accounts_len: u64,
+    pub allowed_program: Pubkey,
     pub metadata_uri: String,
     pub metadata_symbol: String,
 }
 
 #[derive(Accounts)]
-pub struct EndRewardPlan {}
+pub struct EndRewardPlan<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+}
 
 #[derive(Accounts)]
-#[instruction(params: ApproveParams)]
-pub struct Approve<'info> {
+#[instruction(params: RewardParams)]
+pub struct Reward<'info> {
     #[account(mut, seeds = [config.key().as_ref()], bump, mint::decimals = 6, mint::authority = config)]
     pub mint: Account<'info, token::Mint>,
 
-    /// CHECK: todo
-    #[account(seeds = [b"metadata", mpl_token_metadata::ID.as_ref(), mint.key().as_ref()], bump, seeds::program = mpl_token_metadata::ID)]
-    pub metadata: AccountInfo<'info>,
-
     #[account(seeds = [params.admin.as_ref(), params.name.as_bytes()], bump)]
     pub config: Account<'info, RewardPlanConfig>,
-
-    /// CHECK: todo
-    #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
-    pub instructions: AccountInfo<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -213,8 +203,9 @@ pub struct Approve<'info> {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
-pub struct ApproveParams {
+pub struct RewardParams {
     pub name: String,
+    pub amount: u64,
     pub admin: Pubkey,
 }
 
@@ -230,6 +221,6 @@ impl anchor_lang::Id for TokenMetadata {
 
 #[error_code]
 pub enum ErrorCodes {
-    #[msg("calling approve via CPI is not allowed")]
-    CpiApproveNotAllowed,
+    #[msg("program doesn't have sufficient privileges to call Reward")]
+    InsufficientPrivileges,
 }

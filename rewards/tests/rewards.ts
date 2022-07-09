@@ -3,14 +3,17 @@ import * as splToken from "@solana/spl-token";
 import * as mplMd from "@metaplex-foundation/mpl-token-metadata";
 import { Program } from "@project-serum/anchor";
 import { Rewards } from "../target/types/rewards";
+import { RewardsTester } from "../target/types/rewards_tester";
 import { assert } from "chai";
 
 describe("rewards", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const program = anchor.workspace.Rewards as Program<Rewards>;
-  const wallet = (program.provider as anchor.AnchorProvider).wallet;
+  const rewardsProgram = anchor.workspace.Rewards as Program<Rewards>; 
+  const rewardsTesterProgram = anchor.workspace.RewardsTester as Program<RewardsTester>;
+
+  const wallet = (rewardsTesterProgram.provider as anchor.AnchorProvider).wallet;
 
   it("create a simple plan", async () => {
     let rewardPlanName = "discount";
@@ -18,8 +21,7 @@ describe("rewards", () => {
     let createRewardPlanParams = {
       name: rewardPlanName,
       threshold: new anchor.BN(1),
-      rewardProgramId: splToken.TOKEN_PROGRAM_ID,
-      rewardProgramIxAccountsLen: new anchor.BN(3),
+      allowed_program: rewardsTesterProgram.programId,
       metadataUri: "https://foo.com/bar.json",
       metadataSymbol: "REWARDS",
     };
@@ -28,13 +30,13 @@ describe("rewards", () => {
     let [rewardPlanConfig, _rewardPlanConfigBump] =
       anchor.web3.PublicKey.findProgramAddressSync(
         [wallet.publicKey.toBuffer(), Buffer.from(rewardPlanName)],
-        program.programId
+        rewardsProgram.programId
       );
 
     // create mint using reward config as the seed
     let [mint, _mintBump] = anchor.web3.PublicKey.findProgramAddressSync(
       [rewardPlanConfig.toBuffer()],
-      program.programId
+      rewardsProgram.programId
     );
 
     // derive metaplex metadata account with seeds it expects
@@ -44,7 +46,7 @@ describe("rewards", () => {
         mplMd.PROGRAM_ID
       );
 
-    const createRewardPlanTxSig = await program.methods
+    const createRewardPlanTxSig = await rewardsProgram.methods
       .createRewardPlan(createRewardPlanParams)
       .accounts({
         mint: mint,
@@ -60,76 +62,56 @@ describe("rewards", () => {
       .rpc();
     console.log("createRewardPlan txSig: %s", createRewardPlanTxSig);
 
-    const userAta = await splToken.getAssociatedTokenAddress(
-      mint,
-      wallet.publicKey
-    );
+    const customer = await initWallet(rewardsProgram.provider.connection); 
 
-    const bogusTransferIx = splToken.createTransferInstruction(
-      userAta,
-      userAta,
-      wallet.publicKey,
-      0
-    );
+    const customerAta = await splToken.getAssociatedTokenAddress(mint, customer.publicKey);
 
-    let approveParams = {
-      name: rewardPlanName,
-      admin: wallet.publicKey,
-    };
+    // call buy, which calls Reward via CPI
+    let buyTxSig = await rewardsTesterProgram.methods.buy(rewardPlanName, wallet.publicKey).accounts({
+      mint: mint,
+      config: rewardPlanConfig,
+      user: customer.publicKey,
+      userAta: customerAta,
+      systemProgram: anchor.web3.SystemProgram.programId,
+      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      tokenProgram: splToken.TOKEN_PROGRAM_ID,
+      associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+      rewardProgram: rewardsProgram.programId,
+    }).signers([customer]).rpc();
+    console.log("buyTxSig: %s", buyTxSig);
 
-    let approveIx = await program.methods
-      .approve(approveParams)
-      .accounts({
-        mint: mint,
-        metadata: metadata,
-        config: rewardPlanConfig,
-        instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
-        user: wallet.publicKey,
-        userAta: userAta,
-        systemProgram: anchor.web3.SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-        tokenProgram: splToken.TOKEN_PROGRAM_ID,
-        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-      })
-      .instruction();
+    await delay(1000);
 
-    let tx = new anchor.web3.Transaction();
-    tx.add(approveIx, bogusTransferIx);
-    let txSig = await program.provider.sendAndConfirm!(tx, [], {
-      commitment: "confirmed",
-    });
-    console.log("approve + transfer txSig: %s", txSig);
-
-    // check that user received the rewards token
-    let balance = (
-      await program.provider.connection.getTokenAccountBalance(
-        userAta,
-        "confirmed"
-      )
-    ).value.amount;
-    assert.strictEqual(Number(balance), 1);
-
-    // wait for new block
-    await delay(500);
-
-    tx = new anchor.web3.Transaction();
-    tx.add(approveIx, bogusTransferIx);
-    txSig = await program.provider.sendAndConfirm!(tx, [], {
-      commitment: "confirmed",
-    });
-    console.log("approve + transfer txSig: %s", txSig);
-
-    // check that user received the rewards token
-    // balance should be the same as before because it met the threshold and 1 was burned
-    balance = (
-      await program.provider.connection.getTokenAccountBalance(
-        userAta,
-        "confirmed"
-      )
-    ).value.amount;
-    assert.strictEqual(Number(balance), 1);
+    // call buy, which calls Reward via CPI
+    buyTxSig = await rewardsTesterProgram.methods.buy(rewardPlanName, wallet.publicKey).accounts({
+      mint: mint,
+      config: rewardPlanConfig,
+      user: customer.publicKey,
+      userAta: customerAta,
+      systemProgram: anchor.web3.SystemProgram.programId,
+      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      tokenProgram: splToken.TOKEN_PROGRAM_ID,
+      associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+      rewardProgram: rewardsProgram.programId,
+    }).signers([customer]).rpc();
+    console.log("buyTxSig: %s", buyTxSig);
   });
 });
+
+// create a new wallet and seed it with lamports
+async function initWallet(
+  connection: anchor.web3.Connection
+): Promise<anchor.web3.Keypair> {
+  const wallet = anchor.web3.Keypair.generate();
+
+  const airdropTxSig = await connection.requestAirdrop(
+    wallet.publicKey,
+    100_000_000_000
+  );
+  await connection.confirmTransaction(airdropTxSig, "confirmed");
+
+  return wallet;
+}
 
 async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

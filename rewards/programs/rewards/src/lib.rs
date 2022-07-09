@@ -1,119 +1,82 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program::invoke;
+use anchor_lang::solana_program::{
+    program::invoke_signed,
+    sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
+};
 use anchor_spl::{self, associated_token, token};
-use mpl_token_metadata::instruction::{create_master_edition_v3, create_metadata_accounts_v2};
-use mpl_token_metadata::state::{Collection, DataV2};
+use mpl_token_metadata::instruction::create_metadata_accounts_v2;
+use mpl_token_metadata::state::{DataV2, UseMethod, Uses};
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[program]
 pub mod rewards {
+
     use super::*;
 
     // admin creates a reward plan for their service
-    // a collection NFT is minted for future use when minting NFTs used to keep track of customer activity
-    // configuration is also set
     pub fn create_reward_plan(
         ctx: Context<CreateRewardPlan>,
         params: CreateRewardPlanParams,
     ) -> Result<()> {
-        // mint collection token to admin
-        let collection_mint_to_accounts = token::MintTo {
-            mint: ctx.accounts.collection_mint.to_account_info(),
-            to: ctx.accounts.collection_mint_ata.to_account_info(),
-            authority: ctx.accounts.admin.to_account_info(),
-        };
-
-        token::mint_to(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                collection_mint_to_accounts,
-            ),
-            1,
-        )?;
-
+        // create fungible metadata account
         // create collection metadata account
-        let collection_data = DataV2 {
+        let data = DataV2 {
             name: params.name.clone(),
-            symbol: "REWARD".to_string(),
-            uri: params.collection_metadata_uri.clone(),
+            symbol: params.metadata_symbol,
+            uri: params.metadata_uri.clone(),
             seller_fee_basis_points: 0,
             creators: None,
             collection: None,
-            uses: None,
+            uses: Some(Uses {
+                use_method: UseMethod::Multiple,
+                remaining: 100_000_000,
+                total: 100_000_000,
+            }),
         };
 
-        let create_collection_metadata_accounts = [
-            ctx.accounts.collection_md.to_account_info(),
-            ctx.accounts.collection_mint.to_account_info(),
+        let create_metadata_accounts = [
+            ctx.accounts.metadata.to_account_info(),
+            ctx.accounts.mint.to_account_info(),
+            ctx.accounts.config.to_account_info(),
             ctx.accounts.admin.to_account_info(),
-            ctx.accounts.admin.to_account_info(),
-            ctx.accounts.admin.to_account_info(),
+            ctx.accounts.config.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
             ctx.accounts.rent.to_account_info(),
         ];
 
         // TODO: once we can bump latest version use v3
-        let collection_metadata_ix = create_metadata_accounts_v2(
+        let metadata_ix = create_metadata_accounts_v2(
             ctx.accounts.metadata_program.key(),
-            ctx.accounts.collection_md.key(),
-            ctx.accounts.collection_mint.to_account_info().key(),
+            ctx.accounts.metadata.key(),
+            ctx.accounts.mint.to_account_info().key(),
+            ctx.accounts.config.key(),
             ctx.accounts.admin.key(),
-            ctx.accounts.admin.key(),
-            ctx.accounts.admin.key(),
-            collection_data.name,
-            collection_data.symbol,
-            collection_data.uri,
-            collection_data.creators,
-            collection_data.seller_fee_basis_points,
+            ctx.accounts.config.key(),
+            data.name,
+            data.symbol,
+            data.uri,
+            data.creators,
+            data.seller_fee_basis_points,
             false,
             false,
-            collection_data.collection,
-            collection_data.uses,
+            data.collection,
+            data.uses,
         );
 
-        invoke(
-            &collection_metadata_ix,
-            &create_collection_metadata_accounts,
+        invoke_signed(
+            &metadata_ix,
+            &create_metadata_accounts,
+            &[&[
+                ctx.accounts.admin.key().as_ref(),
+                params.name.as_bytes(),
+                &[*ctx.bumps.get("config").unwrap()],
+            ]],
         )?;
 
-        // create collection master edition account
-        let create_collection_master_edition_accounts = [
-            ctx.accounts.collection_me.to_account_info(),
-            ctx.accounts.collection_md.to_account_info(),
-            ctx.accounts.collection_mint.to_account_info(),
-            ctx.accounts.admin.to_account_info(),
-            ctx.accounts.admin.to_account_info(),
-            ctx.accounts.admin.to_account_info(),
-            ctx.accounts.rent.to_account_info(),
-            ctx.accounts.token_program.clone().to_account_info(),
-        ];
-
-        // max_supply of 0 == unique
-        let collection_master_edition_ix = create_master_edition_v3(
-            ctx.accounts.metadata_program.key(),
-            ctx.accounts.collection_me.key(),
-            ctx.accounts.collection_mint.key(),
-            ctx.accounts.admin.key(),
-            ctx.accounts.admin.key(),
-            ctx.accounts.collection_md.key(),
-            ctx.accounts.admin.key(),
-            Some(0),
-        );
-
-        invoke(
-            &collection_master_edition_ix,
-            &create_collection_master_edition_accounts,
-        )?;
-
-        // set config
-        // TODO: set account size properly
-        // TODO: validate params
         let config = &mut ctx.accounts.config;
         config.name = params.name;
         config.threshold = params.threshold;
-        config.collection_metadata_uri = params.collection_metadata_uri;
-        config.item_metadata_uri = params.item_metadata_uri;
 
         Ok(())
     }
@@ -122,29 +85,66 @@ pub mod rewards {
         Ok(())
     }
 
-    pub fn apply(_ctx: Context<Approve>) -> Result<bool> {
-        Ok(true)
+    pub fn approve(ctx: Context<Approve>, params: ApproveParams) -> Result<bool> {
+        // check that approved is not called via CPI
+        let current_index = load_current_index_checked(&ctx.accounts.instructions)? as usize;
+        let current_ix = load_instruction_at_checked(current_index, &ctx.accounts.instructions)?;
+        if current_ix.program_id != *ctx.program_id {
+            return err!(ErrorCodes::CpiApproveNotAllowed);
+        }
+
+        // check if approved before minting the next reward token
+        let is_approved = ctx.accounts.config.threshold <= ctx.accounts.user_ata.amount;
+
+        if is_approved {
+            // if user has reached required amount of tokens, burn the amount so they start over fresh
+            let burn_accounts = token::Burn {
+                mint: ctx.accounts.mint.to_account_info(),
+                from: ctx.accounts.user_ata.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            };
+
+            token::burn(
+                CpiContext::new(ctx.accounts.token_program.to_account_info(), burn_accounts),
+                ctx.accounts.config.threshold,
+            )?;
+        }
+
+        // mint new reward token
+        let mint_to_accounts = token::MintTo {
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.user_ata.to_account_info(),
+            authority: ctx.accounts.config.to_account_info(),
+        };
+
+        token::mint_to(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                mint_to_accounts,
+                &[&[
+                    params.admin.as_ref(),
+                    params.name.as_bytes(),
+                    &[*ctx.bumps.get("config").unwrap()],
+                ]],
+            ),
+            1,
+        )?;
+
+        Ok(is_approved)
     }
 }
 
 #[derive(Accounts)]
 #[instruction(params: CreateRewardPlanParams)]
 pub struct CreateRewardPlan<'info> {
-    #[account(init, payer = admin, seeds = [config.key().as_ref()], bump, mint::decimals = 0, mint::authority = admin)]
-    pub collection_mint: Account<'info, token::Mint>,
-
-    #[account(init, payer = admin, associated_token::mint = collection_mint, associated_token::authority = admin)]
-    pub collection_mint_ata: Account<'info, token::TokenAccount>,
+    #[account(init, payer = admin, seeds = [config.key().as_ref()], bump, mint::decimals = 6, mint::authority = config)]
+    pub mint: Account<'info, token::Mint>,
 
     /// CHECK: todo
-    #[account(mut, seeds = [b"metadata", mpl_token_metadata::ID.as_ref(), collection_mint.key().as_ref()], bump, seeds::program = mpl_token_metadata::ID)]
-    pub collection_md: AccountInfo<'info>,
+    #[account(mut, seeds = [b"metadata", mpl_token_metadata::ID.as_ref(), mint.key().as_ref()], bump, seeds::program = mpl_token_metadata::ID)]
+    pub metadata: AccountInfo<'info>,
 
-    /// CHECK: todo
-    #[account(mut, seeds = [b"metadata", mpl_token_metadata::ID.as_ref(), collection_mint.key().as_ref(), b"edition"], bump, seeds::program = mpl_token_metadata::ID)]
-    pub collection_me: AccountInfo<'info>,
-
-    #[account(init, space = 1024, payer = admin, seeds = [admin.key().as_ref(), params.name.as_bytes()], bump)]
+    #[account(init, space = RewardPlanConfig::MAX_SIZE, payer = admin, seeds = [admin.key().as_ref(), params.name.as_bytes()], bump)]
     pub config: Account<'info, RewardPlanConfig>,
 
     #[account(mut)]
@@ -162,23 +162,61 @@ pub struct CreateRewardPlan<'info> {
 pub struct RewardPlanConfig {
     pub name: String,
     pub threshold: u64,
-    pub collection_metadata_uri: String,
-    pub item_metadata_uri: String,
+    pub reward_program_id: Pubkey,
+    pub reward_program_ix_accounts_len: u64,
+}
+
+impl RewardPlanConfig {
+    pub const MAX_SIZE: usize = 8 + 50 + 8 + 32 + 8;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateRewardPlanParams {
     pub name: String,
     pub threshold: u64,
-    pub collection_metadata_uri: String,
-    pub item_metadata_uri: String,
+    pub reward_program_id: Pubkey,
+    pub reward_program_ix_accounts_len: u64,
+    pub metadata_uri: String,
+    pub metadata_symbol: String,
 }
 
 #[derive(Accounts)]
 pub struct EndRewardPlan {}
 
 #[derive(Accounts)]
-pub struct Approve {}
+#[instruction(params: ApproveParams)]
+pub struct Approve<'info> {
+    #[account(mut, seeds = [config.key().as_ref()], bump, mint::decimals = 6, mint::authority = config)]
+    pub mint: Account<'info, token::Mint>,
+
+    /// CHECK: todo
+    #[account(seeds = [b"metadata", mpl_token_metadata::ID.as_ref(), mint.key().as_ref()], bump, seeds::program = mpl_token_metadata::ID)]
+    pub metadata: AccountInfo<'info>,
+
+    #[account(seeds = [params.admin.as_ref(), params.name.as_bytes()], bump)]
+    pub config: Account<'info, RewardPlanConfig>,
+
+    /// CHECK: todo
+    #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
+    pub instructions: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(init_if_needed, payer = user, associated_token::mint = mint, associated_token::authority = user)]
+    pub user_ata: Account<'info, token::TokenAccount>,
+
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+    pub token_program: Program<'info, token::Token>,
+    pub associated_token_program: Program<'info, associated_token::AssociatedToken>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct ApproveParams {
+    pub name: String,
+    pub admin: Pubkey,
+}
 
 // Create an anchor compatible mpl_token_metadata struct
 #[derive(Clone)]
@@ -188,4 +226,10 @@ impl anchor_lang::Id for TokenMetadata {
     fn id() -> Pubkey {
         mpl_token_metadata::ID
     }
+}
+
+#[error_code]
+pub enum ErrorCodes {
+    #[msg("calling approve via CPI is not allowed")]
+    CpiApproveNotAllowed,
 }

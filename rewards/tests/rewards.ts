@@ -3,7 +3,7 @@ import * as splToken from "@solana/spl-token";
 import * as mplMd from "@metaplex-foundation/mpl-token-metadata";
 import { Program } from "@project-serum/anchor";
 import { Rewards } from "../target/types/rewards";
-import { metadataBeet } from "@metaplex-foundation/mpl-token-metadata";
+import { assert } from "chai";
 
 describe("rewards", () => {
   // Configure the client to use the local cluster.
@@ -30,24 +30,19 @@ describe("rewards", () => {
       );
 
     // create mint using reward config as the seed
-    let [mint, _mintBump] =
-      anchor.web3.PublicKey.findProgramAddressSync(
-        [rewardPlanConfig.toBuffer()],
-        program.programId
-      );
+    let [mint, _mintBump] = anchor.web3.PublicKey.findProgramAddressSync(
+      [rewardPlanConfig.toBuffer()],
+      program.programId
+    );
 
     // derive metaplex metadata account with seeds it expects
     let [metadata, _metadataBump] =
       await anchor.web3.PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("metadata"),
-          mplMd.PROGRAM_ID.toBuffer(),
-          mint.toBuffer(),
-        ],
+        [Buffer.from("metadata"), mplMd.PROGRAM_ID.toBuffer(), mint.toBuffer()],
         mplMd.PROGRAM_ID
       );
 
-    const txSig = await program.methods
+    const createRewardPlanTxSig = await program.methods
       .createRewardPlan(createRewardPlanParams)
       .accounts({
         mint: mint,
@@ -61,6 +56,64 @@ describe("rewards", () => {
         metadataProgram: mplMd.PROGRAM_ID,
       })
       .rpc();
-    console.log("createRewardPlan txSig: %s", txSig);
+    console.log("createRewardPlan txSig: %s", createRewardPlanTxSig);
+
+    const userAta = await splToken.getAssociatedTokenAddress(
+      mint,
+      wallet.publicKey
+    );
+
+    let approveParams = {
+      name: rewardPlanName,
+      admin: wallet.publicKey,
+    };
+
+    let isApprovedTxSig = await program.methods
+      .approve(approveParams)
+      .accounts({
+        mint: mint,
+        metadata: metadata,
+        config: rewardPlanConfig,
+        user: wallet.publicKey,
+        userAta: userAta,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: splToken.TOKEN_PROGRAM_ID,
+        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+    console.log("isApprovedTxSig: %s", isApprovedTxSig);
+
+    await delay(1000);
+
+    // check that user received the rewards token
+    let balance = (await program.provider.connection.getTokenAccountBalance(userAta, "confirmed")).value.amount;
+    assert.strictEqual(Number(balance), 1);
+
+    isApprovedTxSig = await program.methods
+      .approve(approveParams)
+      .accounts({
+        mint: mint,
+        metadata: metadata,
+        config: rewardPlanConfig,
+        user: wallet.publicKey,
+        userAta: userAta,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: splToken.TOKEN_PROGRAM_ID,
+        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+    console.log("isApprovedTxSig: %s", isApprovedTxSig);
+
+    await delay(1000);
+
+    // check that user received the rewards token
+    balance = (await program.provider.connection.getTokenAccountBalance(userAta, "confirmed")).value.amount;
+    assert.strictEqual(Number(balance), 1);
   });
 });
+
+async function delay(ms: number) {
+  return new Promise( resolve => setTimeout(resolve, ms) );
+}

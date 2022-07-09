@@ -18,6 +18,8 @@ describe("rewards", () => {
     let createRewardPlanParams = {
       name: rewardPlanName,
       threshold: new anchor.BN(1),
+      rewardProgramId: splToken.TOKEN_PROGRAM_ID,
+      rewardProgramIxAccountsLen: new anchor.BN(3),
       metadataUri: "https://foo.com/bar.json",
       metadataSymbol: "REWARDS",
     };
@@ -63,17 +65,25 @@ describe("rewards", () => {
       wallet.publicKey
     );
 
+    const bogusTransferIx = splToken.createTransferInstruction(
+      userAta,
+      userAta,
+      wallet.publicKey,
+      0
+    );
+
     let approveParams = {
       name: rewardPlanName,
       admin: wallet.publicKey,
     };
 
-    let isApprovedTxSig = await program.methods
+    let approveIx = await program.methods
       .approve(approveParams)
       .accounts({
         mint: mint,
         metadata: metadata,
         config: rewardPlanConfig,
+        instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
         user: wallet.publicKey,
         userAta: userAta,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -81,39 +91,46 @@ describe("rewards", () => {
         tokenProgram: splToken.TOKEN_PROGRAM_ID,
         associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
       })
-      .rpc();
-    console.log("isApprovedTxSig: %s", isApprovedTxSig);
+      .instruction();
 
-    await delay(1000);
+    let tx = new anchor.web3.Transaction();
+    tx.add(approveIx, bogusTransferIx);
+    let txSig = await program.provider.sendAndConfirm!(tx, [], {
+      commitment: "confirmed",
+    });
+    console.log("approve + transfer txSig: %s", txSig);
 
     // check that user received the rewards token
-    let balance = (await program.provider.connection.getTokenAccountBalance(userAta, "confirmed")).value.amount;
+    let balance = (
+      await program.provider.connection.getTokenAccountBalance(
+        userAta,
+        "confirmed"
+      )
+    ).value.amount;
     assert.strictEqual(Number(balance), 1);
 
-    isApprovedTxSig = await program.methods
-      .approve(approveParams)
-      .accounts({
-        mint: mint,
-        metadata: metadata,
-        config: rewardPlanConfig,
-        user: wallet.publicKey,
-        userAta: userAta,
-        systemProgram: anchor.web3.SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-        tokenProgram: splToken.TOKEN_PROGRAM_ID,
-        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-      })
-      .rpc();
-    console.log("isApprovedTxSig: %s", isApprovedTxSig);
+    // wait for new block
+    await delay(500);
 
-    await delay(1000);
+    tx = new anchor.web3.Transaction();
+    tx.add(approveIx, bogusTransferIx);
+    txSig = await program.provider.sendAndConfirm!(tx, [], {
+      commitment: "confirmed",
+    });
+    console.log("approve + transfer txSig: %s", txSig);
 
     // check that user received the rewards token
-    balance = (await program.provider.connection.getTokenAccountBalance(userAta, "confirmed")).value.amount;
+    // balance should be the same as before because it met the threshold and 1 was burned
+    balance = (
+      await program.provider.connection.getTokenAccountBalance(
+        userAta,
+        "confirmed"
+      )
+    ).value.amount;
     assert.strictEqual(Number(balance), 1);
   });
 });
 
 async function delay(ms: number) {
-  return new Promise( resolve => setTimeout(resolve, ms) );
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program::invoke_signed;
+use anchor_lang::solana_program::{
+    program::invoke_signed,
+    sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
+};
 use anchor_spl::{self, associated_token, token};
 use mpl_token_metadata::instruction::create_metadata_accounts_v2;
 use mpl_token_metadata::state::{DataV2, UseMethod, Uses};
@@ -83,6 +86,13 @@ pub mod rewards {
     }
 
     pub fn approve(ctx: Context<Approve>, params: ApproveParams) -> Result<bool> {
+        // check that approved is not called via CPI
+        let current_index = load_current_index_checked(&ctx.accounts.instructions)? as usize;
+        let current_ix = load_instruction_at_checked(current_index, &ctx.accounts.instructions)?;
+        if current_ix.program_id != *ctx.program_id {
+            return err!(ErrorCodes::CpiApproveNotAllowed);
+        }
+
         // check if approved before minting the next reward token
         let is_approved = ctx.accounts.config.threshold <= ctx.accounts.user_ata.amount;
 
@@ -152,16 +162,20 @@ pub struct CreateRewardPlan<'info> {
 pub struct RewardPlanConfig {
     pub name: String,
     pub threshold: u64,
+    pub reward_program_id: Pubkey,
+    pub reward_program_ix_accounts_len: u64,
 }
 
 impl RewardPlanConfig {
-    pub const MAX_SIZE: usize = 8 + 50 + 8;
+    pub const MAX_SIZE: usize = 8 + 50 + 8 + 32 + 8;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct CreateRewardPlanParams {
     pub name: String,
     pub threshold: u64,
+    pub reward_program_id: Pubkey,
+    pub reward_program_ix_accounts_len: u64,
     pub metadata_uri: String,
     pub metadata_symbol: String,
 }
@@ -181,6 +195,10 @@ pub struct Approve<'info> {
 
     #[account(seeds = [params.admin.as_ref(), params.name.as_bytes()], bump)]
     pub config: Account<'info, RewardPlanConfig>,
+
+    /// CHECK: todo
+    #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
+    pub instructions: AccountInfo<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -208,4 +226,10 @@ impl anchor_lang::Id for TokenMetadata {
     fn id() -> Pubkey {
         mpl_token_metadata::ID
     }
+}
+
+#[error_code]
+pub enum ErrorCodes {
+    #[msg("calling approve via CPI is not allowed")]
+    CpiApproveNotAllowed,
 }

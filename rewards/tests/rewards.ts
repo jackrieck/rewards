@@ -3,6 +3,7 @@ import * as splToken from "@solana/spl-token";
 import * as mplMd from "@metaplex-foundation/mpl-token-metadata";
 import { Program } from "@project-serum/anchor";
 import { Rewards } from "../target/types/rewards";
+import { metadataBeet } from "@metaplex-foundation/mpl-token-metadata";
 
 describe("rewards", () => {
   // Configure the client to use the local cluster.
@@ -17,8 +18,8 @@ describe("rewards", () => {
     let createRewardPlanParams = {
       name: rewardPlanName,
       threshold: new anchor.BN(1),
-      collectionMetadataUri: "collection-url",
-      itemMetadataUri: "item-url",
+      metadataUri: "https://foo.com/bar.json",
+      metadataSymbol: "REWARDS",
     };
 
     // holds all the reward plan configuration
@@ -28,37 +29,20 @@ describe("rewards", () => {
         program.programId
       );
 
-    // create collection mint using reward config as the seed
-    let [collectionMint, _collectionMintBump] =
+    // create mint using reward config as the seed
+    let [mint, _mintBump] =
       anchor.web3.PublicKey.findProgramAddressSync(
         [rewardPlanConfig.toBuffer()],
         program.programId
       );
 
-    let collectionMintAta = await splToken.getAssociatedTokenAddress(
-      collectionMint,
-      wallet.publicKey
-    );
-
     // derive metaplex metadata account with seeds it expects
-    let [collectionMd, _collectionMdBump] =
+    let [metadata, _metadataBump] =
       await anchor.web3.PublicKey.findProgramAddressSync(
         [
           Buffer.from("metadata"),
           mplMd.PROGRAM_ID.toBuffer(),
-          collectionMint.toBuffer(),
-        ],
-        mplMd.PROGRAM_ID
-      );
-
-    // derive metaplex master edition account with seeds it expects
-    let [collectionMe, _collectionMeBump] =
-      await anchor.web3.PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("metadata"),
-          mplMd.PROGRAM_ID.toBuffer(),
-          collectionMint.toBuffer(),
-          Buffer.from("edition"),
+          mint.toBuffer(),
         ],
         mplMd.PROGRAM_ID
       );
@@ -66,10 +50,8 @@ describe("rewards", () => {
     const txSig = await program.methods
       .createRewardPlan(createRewardPlanParams)
       .accounts({
-        collectionMint: collectionMint,
-        collectionMintAta: collectionMintAta,
-        collectionMd: collectionMd,
-        collectionMe: collectionMe,
+        mint: mint,
+        metadata: metadata,
         config: rewardPlanConfig,
         admin: wallet.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,

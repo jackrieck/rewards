@@ -1,6 +1,6 @@
 # rewards
 
-Allow any dApp to integrate a loyalty program for users that integrate with their dApp
+Enable on chain rewards with a simple CPI call
 
 ## TODO
 

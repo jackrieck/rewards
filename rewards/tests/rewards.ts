@@ -7,7 +7,7 @@ import { RewardsTester } from "../target/types/rewards_tester";
 import { assert } from "chai";
 
 describe("rewards", () => {
-  // managerure the client to use the local cluster.
+  // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
   const rewardsProgram = anchor.workspace.Rewards as Program<Rewards>;
@@ -28,7 +28,7 @@ describe("rewards", () => {
       metadataSymbol: "REWARDS",
     };
 
-    // holds all the reward plan manageruration
+    // holds all the reward plan config and is the mint authority
     let [rewardPlanManager, _rewardPlanManagerBump] =
       anchor.web3.PublicKey.findProgramAddressSync(
         [wallet.publicKey.toBuffer(), Buffer.from(rewardPlanName)],

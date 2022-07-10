@@ -21,7 +21,7 @@ describe("rewards", () => {
     let createRewardPlanParams = {
       name: rewardPlanName,
       threshold: new anchor.BN(1),
-      allowed_program: rewardsTesterProgram.programId,
+      allowedProgram: rewardsTesterProgram.programId,
       metadataUri: "https://foo.com/bar.json",
       metadataSymbol: "REWARDS",
     };
@@ -72,6 +72,7 @@ describe("rewards", () => {
       config: rewardPlanConfig,
       user: customer.publicKey,
       userAta: customerAta,
+      instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
       systemProgram: anchor.web3.SystemProgram.programId,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       tokenProgram: splToken.TOKEN_PROGRAM_ID,
@@ -88,6 +89,7 @@ describe("rewards", () => {
       config: rewardPlanConfig,
       user: customer.publicKey,
       userAta: customerAta,
+      instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
       systemProgram: anchor.web3.SystemProgram.programId,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       tokenProgram: splToken.TOKEN_PROGRAM_ID,

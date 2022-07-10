@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::program::invoke_signed;
+use anchor_lang::solana_program::{sysvar::instructions::{load_current_index_checked, load_instruction_at_checked}, program::invoke_signed};
 use anchor_spl::{self, associated_token, token};
 use mpl_token_metadata::instruction::create_metadata_accounts_v2;
 use mpl_token_metadata::state::{DataV2, UseMethod, Uses};
@@ -85,10 +85,15 @@ pub mod rewards {
     }
 
     pub fn reward(ctx: Context<Reward>, params: RewardParams) -> Result<bool> {
-        //// if the caller is not the configured allowed program return an error
-        //if ctx.program_id.ne(&ctx.accounts.config.allowed_program) {
-        //    return err!(ErrorCodes::InsufficientPrivileges);
-        //}
+
+        // get calling program_id
+        let current_index = load_current_index_checked(&ctx.accounts.instructions)? as usize;
+        let current_ix = load_instruction_at_checked(current_index, &ctx.accounts.instructions)?;
+
+        // if the caller is not the configured allowed program return an error
+        if current_ix.program_id.ne(&ctx.accounts.config.allowed_program) {
+            return err!(ErrorCodes::InsufficientPrivileges);
+        }
 
         // check if approved before minting the next reward token
         let is_approved = ctx.accounts.config.threshold <= ctx.accounts.user_ata.amount;
@@ -195,6 +200,10 @@ pub struct Reward<'info> {
 
     #[account(init_if_needed, payer = user, associated_token::mint = mint, associated_token::authority = user)]
     pub user_ata: Account<'info, token::TokenAccount>,
+
+    /// CHECK: todo
+    #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
+    pub instructions: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,

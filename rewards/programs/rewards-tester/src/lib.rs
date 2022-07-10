@@ -18,6 +18,7 @@ pub mod rewards_tester {
             config: ctx.accounts.config.to_account_info(),
             user: ctx.accounts.user.to_account_info(),
             user_ata: ctx.accounts.user_ata.to_account_info(),
+            instructions: ctx.accounts.instructions.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
             rent: ctx.accounts.rent.to_account_info(),
             token_program: ctx.accounts.token_program.to_account_info(),
@@ -58,6 +59,10 @@ pub struct Buy<'info> {
 
     #[account(init_if_needed, payer = user, associated_token::mint = mint, associated_token::authority = user)]
     pub user_ata: Account<'info, token::TokenAccount>,
+
+    /// CHECK: todo
+    #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
+    pub instructions: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,

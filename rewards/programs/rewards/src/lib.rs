@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{sysvar::instructions::{load_current_index_checked, load_instruction_at_checked}, program::invoke_signed};
+use anchor_lang::solana_program::{
+    program::invoke_signed,
+    sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
+};
 use anchor_spl::{self, associated_token, token};
 use mpl_token_metadata::instruction::create_metadata_accounts_v2;
 use mpl_token_metadata::state::{DataV2, UseMethod, Uses};
@@ -85,13 +88,15 @@ pub mod rewards {
     }
 
     pub fn reward(ctx: Context<Reward>, params: RewardParams) -> Result<bool> {
-
         // get calling program_id
         let current_index = load_current_index_checked(&ctx.accounts.instructions)? as usize;
         let current_ix = load_instruction_at_checked(current_index, &ctx.accounts.instructions)?;
 
         // if the caller is not the configured allowed program return an error
-        if current_ix.program_id.ne(&ctx.accounts.config.allowed_program) {
+        if current_ix
+            .program_id
+            .ne(&ctx.accounts.config.allowed_program)
+        {
             return err!(ErrorCodes::InsufficientPrivileges);
         }
 

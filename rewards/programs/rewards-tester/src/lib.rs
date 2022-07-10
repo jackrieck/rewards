@@ -12,7 +12,6 @@ pub mod rewards_tester {
     use super::*;
 
     pub fn buy(ctx: Context<Buy>, name: String, admin: Pubkey) -> Result<()> {
-
         let reward_accounts = Reward {
             mint: ctx.accounts.mint.to_account_info(),
             config: ctx.accounts.config.to_account_info(),
@@ -31,7 +30,13 @@ pub mod rewards_tester {
             amount: 1,
         };
 
-        let result = reward(CpiContext::new(ctx.accounts.reward_program.to_account_info(), reward_accounts), reward_params)?;
+        let result = reward(
+            CpiContext::new(
+                ctx.accounts.reward_program.to_account_info(),
+                reward_accounts,
+            ),
+            reward_params,
+        )?;
 
         // log if customer got rewarded by the program or not
         let rewarded = result.get();

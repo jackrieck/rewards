@@ -10,10 +10,12 @@ describe("rewards", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  const rewardsProgram = anchor.workspace.Rewards as Program<Rewards>; 
-  const rewardsTesterProgram = anchor.workspace.RewardsTester as Program<RewardsTester>;
+  const rewardsProgram = anchor.workspace.Rewards as Program<Rewards>;
+  const rewardsTesterProgram = anchor.workspace
+    .RewardsTester as Program<RewardsTester>;
 
-  const wallet = (rewardsTesterProgram.provider as anchor.AnchorProvider).wallet;
+  const wallet = (rewardsTesterProgram.provider as anchor.AnchorProvider)
+    .wallet;
 
   it("create a simple plan", async () => {
     let rewardPlanName = "discount";
@@ -62,40 +64,51 @@ describe("rewards", () => {
       .rpc();
     console.log("createRewardPlan txSig: %s", createRewardPlanTxSig);
 
-    const customer = await initWallet(rewardsProgram.provider.connection); 
+    const customer = await initWallet(rewardsProgram.provider.connection);
 
-    const customerAta = await splToken.getAssociatedTokenAddress(mint, customer.publicKey);
+    const customerAta = await splToken.getAssociatedTokenAddress(
+      mint,
+      customer.publicKey
+    );
 
     // call buy, which calls Reward via CPI
-    let buyTxSig = await rewardsTesterProgram.methods.buy(rewardPlanName, wallet.publicKey).accounts({
-      mint: mint,
-      config: rewardPlanConfig,
-      user: customer.publicKey,
-      userAta: customerAta,
-      instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
-      systemProgram: anchor.web3.SystemProgram.programId,
-      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      tokenProgram: splToken.TOKEN_PROGRAM_ID,
-      associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-      rewardProgram: rewardsProgram.programId,
-    }).signers([customer]).rpc();
+    let buyTxSig = await rewardsTesterProgram.methods
+      .buy(rewardPlanName, wallet.publicKey)
+      .accounts({
+        mint: mint,
+        config: rewardPlanConfig,
+        user: customer.publicKey,
+        userAta: customerAta,
+        instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: splToken.TOKEN_PROGRAM_ID,
+        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+        rewardProgram: rewardsProgram.programId,
+      })
+      .signers([customer])
+      .rpc();
     console.log("buyTxSig: %s", buyTxSig);
 
     await delay(1000);
 
     // call buy, which calls Reward via CPI
-    buyTxSig = await rewardsTesterProgram.methods.buy(rewardPlanName, wallet.publicKey).accounts({
-      mint: mint,
-      config: rewardPlanConfig,
-      user: customer.publicKey,
-      userAta: customerAta,
-      instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
-      systemProgram: anchor.web3.SystemProgram.programId,
-      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      tokenProgram: splToken.TOKEN_PROGRAM_ID,
-      associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
-      rewardProgram: rewardsProgram.programId,
-    }).signers([customer]).rpc();
+    buyTxSig = await rewardsTesterProgram.methods
+      .buy(rewardPlanName, wallet.publicKey)
+      .accounts({
+        mint: mint,
+        config: rewardPlanConfig,
+        user: customer.publicKey,
+        userAta: customerAta,
+        instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        tokenProgram: splToken.TOKEN_PROGRAM_ID,
+        associatedTokenProgram: splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+        rewardProgram: rewardsProgram.programId,
+      })
+      .signers([customer])
+      .rpc();
     console.log("buyTxSig: %s", buyTxSig);
   });
 });

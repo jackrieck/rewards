@@ -14,7 +14,7 @@ pub mod rewards_tester {
     pub fn buy(ctx: Context<Buy>, name: String, admin: Pubkey) -> Result<()> {
         let reward_accounts = Reward {
             mint: ctx.accounts.mint.to_account_info(),
-            config: ctx.accounts.config.to_account_info(),
+            manager: ctx.accounts.manager.to_account_info(),
             user: ctx.accounts.user.to_account_info(),
             user_ata: ctx.accounts.user_ata.to_account_info(),
             instructions: ctx.accounts.instructions.to_account_info(),
@@ -57,7 +57,7 @@ pub struct Buy<'info> {
     pub mint: Account<'info, token::Mint>,
 
     #[account()]
-    pub config: Account<'info, rewards::RewardPlanConfig>,
+    pub manager: Account<'info, rewards::RewardPlanManager>,
 
     #[account(mut)]
     pub user: Signer<'info>,

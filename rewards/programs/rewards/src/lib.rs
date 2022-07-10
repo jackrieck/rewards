@@ -38,9 +38,9 @@ pub mod rewards {
         let create_metadata_accounts = [
             ctx.accounts.metadata.to_account_info(),
             ctx.accounts.mint.to_account_info(),
-            ctx.accounts.config.to_account_info(),
+            ctx.accounts.manager.to_account_info(),
             ctx.accounts.admin.to_account_info(),
-            ctx.accounts.config.to_account_info(),
+            ctx.accounts.manager.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
             ctx.accounts.rent.to_account_info(),
         ];
@@ -50,9 +50,9 @@ pub mod rewards {
             ctx.accounts.metadata_program.key(),
             ctx.accounts.metadata.key(),
             ctx.accounts.mint.to_account_info().key(),
-            ctx.accounts.config.key(),
+            ctx.accounts.manager.key(),
             ctx.accounts.admin.key(),
-            ctx.accounts.config.key(),
+            ctx.accounts.manager.key(),
             data.name,
             data.symbol,
             data.uri,
@@ -70,15 +70,15 @@ pub mod rewards {
             &[&[
                 ctx.accounts.admin.key().as_ref(),
                 params.name.as_bytes(),
-                &[*ctx.bumps.get("config").unwrap()],
+                &[*ctx.bumps.get("manager").unwrap()],
             ]],
         )?;
 
-        // set config in account
-        let config = &mut ctx.accounts.config;
-        config.name = params.name;
-        config.threshold = params.threshold;
-        config.allowed_program = params.allowed_program;
+        // set manager in account
+        let manager = &mut ctx.accounts.manager;
+        manager.name = params.name;
+        manager.threshold = params.threshold;
+        manager.allowed_program = params.allowed_program;
 
         Ok(())
     }
@@ -92,16 +92,16 @@ pub mod rewards {
         let current_index = load_current_index_checked(&ctx.accounts.instructions)? as usize;
         let current_ix = load_instruction_at_checked(current_index, &ctx.accounts.instructions)?;
 
-        // if the caller is not the configured allowed program return an error
+        // if the caller is not the managerured allowed program return an error
         if current_ix
             .program_id
-            .ne(&ctx.accounts.config.allowed_program)
+            .ne(&ctx.accounts.manager.allowed_program)
         {
             return err!(ErrorCodes::InsufficientPrivileges);
         }
 
         // check if approved before minting the next reward token
-        let is_approved = ctx.accounts.config.threshold <= ctx.accounts.user_ata.amount;
+        let is_approved = ctx.accounts.manager.threshold <= ctx.accounts.user_ata.amount;
 
         if is_approved {
             // if user has reached required amount of tokens, burn the amount so they start over fresh
@@ -113,7 +113,7 @@ pub mod rewards {
 
             token::burn(
                 CpiContext::new(ctx.accounts.token_program.to_account_info(), burn_accounts),
-                ctx.accounts.config.threshold,
+                ctx.accounts.manager.threshold,
             )?;
         }
 
@@ -121,7 +121,7 @@ pub mod rewards {
         let mint_to_accounts = token::MintTo {
             mint: ctx.accounts.mint.to_account_info(),
             to: ctx.accounts.user_ata.to_account_info(),
-            authority: ctx.accounts.config.to_account_info(),
+            authority: ctx.accounts.manager.to_account_info(),
         };
 
         token::mint_to(
@@ -131,7 +131,7 @@ pub mod rewards {
                 &[&[
                     params.admin.as_ref(),
                     params.name.as_bytes(),
-                    &[*ctx.bumps.get("config").unwrap()],
+                    &[*ctx.bumps.get("manager").unwrap()],
                 ]],
             ),
             params.amount,
@@ -144,15 +144,15 @@ pub mod rewards {
 #[derive(Accounts)]
 #[instruction(params: CreateRewardPlanParams)]
 pub struct CreateRewardPlan<'info> {
-    #[account(init, payer = admin, seeds = [config.key().as_ref()], bump, mint::decimals = 6, mint::authority = config)]
+    #[account(init, payer = admin, seeds = [manager.key().as_ref()], bump, mint::decimals = 6, mint::authority = manager)]
     pub mint: Account<'info, token::Mint>,
 
     /// CHECK: todo
     #[account(mut, seeds = [b"metadata", mpl_token_metadata::ID.as_ref(), mint.key().as_ref()], bump, seeds::program = mpl_token_metadata::ID)]
     pub metadata: AccountInfo<'info>,
 
-    #[account(init, space = RewardPlanConfig::MAX_SIZE, payer = admin, seeds = [admin.key().as_ref(), params.name.as_bytes()], bump)]
-    pub config: Account<'info, RewardPlanConfig>,
+    #[account(init, space = RewardPlanManager::MAX_SIZE, payer = admin, seeds = [admin.key().as_ref(), params.name.as_bytes()], bump)]
+    pub manager: Account<'info, RewardPlanManager>,
 
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -166,13 +166,13 @@ pub struct CreateRewardPlan<'info> {
 
 #[account]
 #[derive(Default)]
-pub struct RewardPlanConfig {
+pub struct RewardPlanManager {
     pub name: String,
     pub threshold: u64,
     pub allowed_program: Pubkey,
 }
 
-impl RewardPlanConfig {
+impl RewardPlanManager {
     pub const MAX_SIZE: usize = 8 + 50 + 8 + 32;
 }
 
@@ -194,11 +194,11 @@ pub struct EndRewardPlan<'info> {
 #[derive(Accounts)]
 #[instruction(params: RewardParams)]
 pub struct Reward<'info> {
-    #[account(mut, seeds = [config.key().as_ref()], bump, mint::decimals = 6, mint::authority = config)]
+    #[account(mut, seeds = [manager.key().as_ref()], bump, mint::decimals = 6, mint::authority = manager)]
     pub mint: Account<'info, token::Mint>,
 
     #[account(seeds = [params.admin.as_ref(), params.name.as_bytes()], bump)]
-    pub config: Account<'info, RewardPlanConfig>,
+    pub manager: Account<'info, RewardPlanManager>,
 
     #[account(mut)]
     pub user: Signer<'info>,

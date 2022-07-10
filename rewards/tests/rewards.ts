@@ -7,7 +7,7 @@ import { RewardsTester } from "../target/types/rewards_tester";
 import { assert } from "chai";
 
 describe("rewards", () => {
-  // Configure the client to use the local cluster.
+  // managerure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
   const rewardsProgram = anchor.workspace.Rewards as Program<Rewards>;
@@ -28,16 +28,16 @@ describe("rewards", () => {
       metadataSymbol: "REWARDS",
     };
 
-    // holds all the reward plan configuration
-    let [rewardPlanConfig, _rewardPlanConfigBump] =
+    // holds all the reward plan manageruration
+    let [rewardPlanManager, _rewardPlanManagerBump] =
       anchor.web3.PublicKey.findProgramAddressSync(
         [wallet.publicKey.toBuffer(), Buffer.from(rewardPlanName)],
         rewardsProgram.programId
       );
 
-    // create mint using reward config as the seed
+    // create mint using reward manager as the seed
     let [mint, _mintBump] = anchor.web3.PublicKey.findProgramAddressSync(
-      [rewardPlanConfig.toBuffer()],
+      [rewardPlanManager.toBuffer()],
       rewardsProgram.programId
     );
 
@@ -53,7 +53,7 @@ describe("rewards", () => {
       .accounts({
         mint: mint,
         metadata: metadata,
-        config: rewardPlanConfig,
+        manager: rewardPlanManager,
         admin: wallet.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
@@ -76,7 +76,7 @@ describe("rewards", () => {
       .buy(rewardPlanName, wallet.publicKey)
       .accounts({
         mint: mint,
-        config: rewardPlanConfig,
+        manager: rewardPlanManager,
         user: customer.publicKey,
         userAta: customerAta,
         instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -97,7 +97,7 @@ describe("rewards", () => {
       .buy(rewardPlanName, wallet.publicKey)
       .accounts({
         mint: mint,
-        config: rewardPlanConfig,
+        manager: rewardPlanManager,
         user: customer.publicKey,
         userAta: customerAta,
         instructions: anchor.web3.SYSVAR_INSTRUCTIONS_PUBKEY,

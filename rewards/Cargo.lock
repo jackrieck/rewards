@@ -990,6 +990,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rewards-tester"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "rewards",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
